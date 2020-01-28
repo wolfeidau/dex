@@ -78,7 +78,8 @@ type Config struct {
 	IDTokensValidFor     time.Duration // Defaults to 24 hours
 	AuthRequestsValidFor time.Duration // Defaults to 24 hours
 	// If set, the server will use this connector to handle password grants
-	PasswordConnector string
+	PasswordConnector      string
+	DeviceRequestsValidFor time.Duration //Defaults to 5 minutes
 
 	GCFrequency time.Duration // Defaults to 5 minutes
 
@@ -155,8 +156,9 @@ type Server struct {
 
 	now func() time.Time
 
-	idTokensValidFor     time.Duration
-	authRequestsValidFor time.Duration
+	idTokensValidFor       time.Duration
+	authRequestsValidFor   time.Duration
+	deviceRequestsValidFor time.Duration
 
 	logger log.Logger
 }
@@ -218,6 +220,7 @@ func newServer(ctx context.Context, c Config, rotationStrategy rotationStrategy)
 		supportedResponseTypes: supported,
 		idTokensValidFor:       value(c.IDTokensValidFor, 24*time.Hour),
 		authRequestsValidFor:   value(c.AuthRequestsValidFor, 24*time.Hour),
+		deviceRequestsValidFor: value(c.DeviceRequestsValidFor, 5*time.Minute),
 		skipApproval:           c.SkipApprovalScreen,
 		alwaysShowLogin:        c.AlwaysShowLoginScreen,
 		now:                    now,
@@ -301,8 +304,11 @@ func newServer(ctx context.Context, c Config, rotationStrategy rotationStrategy)
 	handleWithCORS("/userinfo", s.handleUserInfo)
 	handleFunc("/auth", s.handleAuthorization)
 	handleFunc("/auth/{connector}", s.handleConnectorLogin)
+	handleFunc("/device", s.handleDeviceExchange)
+	handleFunc("/device/auth/verify_code", s.verifyUserCode)
 	handleFunc("/device/code", s.handleDeviceCode)
 	handleFunc("/device/token", s.handleDeviceToken)
+	handleFunc("/device/callback", s.handleDeviceCallback)
 	r.HandleFunc(path.Join(issuerURL.Path, "/callback"), func(w http.ResponseWriter, r *http.Request) {
 		// Strip the X-Remote-* headers to prevent security issues on
 		// misconfigured authproxy connector setups.

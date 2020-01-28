@@ -234,7 +234,6 @@ var migrations = []migration{
 				device_code text not null,
 				client_id text not null,
 				scopes bytea not null, -- JSON array of strings
-				pkce_verifier text not null,
 				expiry timestamptz not null
 			);`,
 			`
@@ -242,7 +241,9 @@ var migrations = []migration{
 				device_code text not null primary key,
 				status text not null,
 				token text,
-				expiry timestamptz not null
+				expiry timestamptz not null,
+				last_request timestamptz not null,
+                poll_interval integer not null
 			);`,
 		},
 	},
