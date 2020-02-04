@@ -15,11 +15,12 @@ import (
 	"time"
 
 	oidc "github.com/coreos/go-oidc"
+	"github.com/gorilla/mux"
+	jose "gopkg.in/square/go-jose.v2"
+
 	"github.com/dexidp/dex/connector"
 	"github.com/dexidp/dex/server/internal"
 	"github.com/dexidp/dex/storage"
-	"github.com/gorilla/mux"
-	jose "gopkg.in/square/go-jose.v2"
 )
 
 // newHealthChecker returns the healthz handler. The handler runs until the
