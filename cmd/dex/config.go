@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/dexidp/dex/storage/dynamodb"
 	"os"
 	"strings"
 
@@ -179,6 +180,7 @@ var storages = map[string]func() StorageConfig{
 	"sqlite3":    func() StorageConfig { return new(sql.SQLite3) },
 	"postgres":   func() StorageConfig { return new(sql.Postgres) },
 	"mysql":      func() StorageConfig { return new(sql.MySQL) },
+	"dynamodb":   func() StorageConfig { return new(dynamodb.DynamoDB) },
 }
 
 // UnmarshalJSON allows Storage to implement the unmarshaler interface to

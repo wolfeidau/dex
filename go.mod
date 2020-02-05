@@ -4,6 +4,7 @@ go 1.13
 
 require (
 	github.com/Microsoft/hcsshim v0.8.7 // indirect
+	github.com/aws/aws-sdk-go v1.28.9
 	github.com/beevik/etree v1.1.0
 	github.com/coreos/go-oidc v2.2.1+incompatible
 	github.com/coreos/go-semver v0.3.0 // indirect
@@ -24,6 +25,7 @@ require (
 	github.com/kylelemons/godebug v1.1.0
 	github.com/lib/pq v1.3.0
 	github.com/mattn/go-sqlite3 v1.11.0
+	github.com/pkg/errors v0.8.1
 	github.com/pquerna/cachecontrol v0.0.0-20180517163645-1555304b9b35 // indirect
 	github.com/prometheus/client_golang v1.4.0
 	github.com/russellhaering/goxmldsig v0.0.0-20180430223755-7acd5e4a6ef7

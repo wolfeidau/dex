@@ -1,0 +1,761 @@
+package dynamodb
+
+import (
+	"fmt"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
+	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbiface"
+	dexp "github.com/aws/aws-sdk-go/service/dynamodb/expression"
+	"github.com/dexidp/dex/pkg/log"
+	"github.com/dexidp/dex/storage"
+	"github.com/pkg/errors"
+	"time"
+)
+
+const (
+	clientPartition         = "client"
+	authCodePartition       = "auth_code"
+	refreshTokenPartition   = "refresh_token"
+	authRequestPartition    = "auth_req"
+	passwordPartition       = "password"
+	offlineSessionPartition = "offline_session"
+	connectorPartition      = "connector"
+	keysPartition           = "keys"
+	keysId                  = "openid-connect"
+)
+
+func New(logger log.Logger, tableName string, config ...*aws.Config) storage.Storage {
+
+	sess := session.Must(session.NewSession(config...))
+
+	return &dynamodbStorage{
+		tableName: tableName,
+		ddb:       dynamodb.New(sess),
+		logger:    logger,
+	}
+}
+
+// dynamodbStorage uses a single dynamodb table to store all the data used by dex
+type dynamodbStorage struct {
+	tableName string
+	ddb       dynamodbiface.DynamoDBAPI
+
+	logger log.Logger
+}
+
+func (ds *dynamodbStorage) Close() error {
+	return nil
+}
+
+func (ds *dynamodbStorage) CreateClient(client storage.Client) error {
+	return ds.create(clientPartition, client)
+}
+
+func (ds *dynamodbStorage) CreateAuthRequest(authRequest storage.AuthRequest) error {
+	return ds.create(authRequestPartition, &AuthRequestWrapper{
+		ID:          authRequest.ID,
+		AuthRequest: authRequest,
+	})
+}
+
+func (ds *dynamodbStorage) CreateAuthCode(authCode storage.AuthCode) error {
+	return ds.create(authCodePartition, &AuthCodeWrapper{
+		ID:       authCode.ID,
+		AuthCode: authCode,
+	})
+}
+
+func (ds *dynamodbStorage) CreateRefresh(refreshToken storage.RefreshToken) error {
+	return ds.create(refreshTokenPartition, refreshToken)
+}
+
+func (ds *dynamodbStorage) CreatePassword(password storage.Password) error {
+	return ds.create(passwordPartition, PasswordWrapper{
+		ID:       password.Email,
+		Password: password,
+	})
+}
+
+func (ds *dynamodbStorage) CreateOfflineSessions(offlineSession storage.OfflineSessions) error {
+	return ds.create(offlineSessionPartition, offlineSession)
+}
+
+func (ds *dynamodbStorage) CreateConnector(connector storage.Connector) error {
+	return ds.create(connectorPartition, connector)
+}
+
+func (ds *dynamodbStorage) GetAuthRequest(id string) (storage.AuthRequest, error) {
+
+	var arw AuthRequestWrapper
+
+	err := ds.getByID(authRequestPartition, id, &arw)
+	if err != nil {
+		return arw.AuthRequest, errors.Wrapf(err, "failed to get auth request by id: %s", id)
+	}
+
+	return arw.AuthRequest, nil
+}
+
+func (ds *dynamodbStorage) GetAuthCode(id string) (storage.AuthCode, error) {
+
+	var acw AuthCodeWrapper
+
+	err := ds.getByID(authCodePartition, id, &acw)
+	if err != nil {
+		return acw.AuthCode, errors.Wrapf(err, "failed to get auth code by id: %s", id)
+	}
+
+	return acw.AuthCode, nil
+}
+
+func (ds *dynamodbStorage) GetClient(id string) (storage.Client, error) {
+
+	var client storage.Client
+
+	err := ds.getByID(clientPartition, id, &client)
+	if err != nil {
+		return client, errors.Wrapf(err, "failed to get client by id: %s", id)
+	}
+
+	return client, nil
+}
+
+func (ds *dynamodbStorage) GetKeys() (storage.Keys, error) {
+
+	var keys storage.Keys
+
+	err := ds.getByID(keysPartition, keysId, &keys)
+	if err != nil {
+		return keys, errors.Wrapf(err, "failed to get keys by id: %s", keysId)
+	}
+
+	return keys, nil
+}
+
+func (ds *dynamodbStorage) GetRefresh(id string) (storage.RefreshToken, error) {
+
+	var refreshToken storage.RefreshToken
+
+	err := ds.getByID(refreshTokenPartition, id, &refreshToken)
+	if err != nil {
+		return refreshToken, errors.Wrapf(err, "failed to get refresh token by id: %s", id)
+	}
+
+	return refreshToken, nil
+}
+
+func (ds *dynamodbStorage) GetPassword(email string) (storage.Password, error) {
+
+	var pw PasswordWrapper
+
+	err := ds.getByID(passwordPartition, email, &pw)
+	if err != nil {
+		return pw.Password, errors.Wrapf(err, "failed to get password by email: %s", email)
+	}
+
+	return pw.Password, nil
+}
+
+func (ds *dynamodbStorage) GetOfflineSessions(userID string, connID string) (storage.OfflineSessions, error) {
+
+	var offlineSession storage.OfflineSessions
+
+	id := fmt.Sprintf("%s/%s", userID, connID)
+
+	err := ds.getByID(offlineSessionPartition, id, &offlineSession)
+	if err != nil {
+		return offlineSession, errors.Wrapf(err, "failed to get offline session by id: %s", id)
+	}
+
+	return offlineSession, nil
+}
+
+func (ds *dynamodbStorage) GetConnector(id string) (storage.Connector, error) {
+
+	var connector storage.Connector
+
+	err := ds.getByID(connectorPartition, id, &connector)
+	if err != nil {
+		return connector, errors.Wrapf(err, "failed to get connector by id: %s", id)
+	}
+
+	return connector, nil
+}
+
+func (ds *dynamodbStorage) ListClients() ([]storage.Client, error) {
+
+	items, err := ds.list(clientPartition)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to list %s", clientPartition)
+	}
+
+	clients := make([]storage.Client, len(items))
+
+	for n, item := range items {
+
+		var client storage.Client
+
+		err = dynamodbattribute.UnmarshalMap(item, &client)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to unmarshal %v", item)
+		}
+
+		clients[n] = client
+	}
+
+	return clients, nil
+}
+
+func (ds *dynamodbStorage) ListRefreshTokens() ([]storage.RefreshToken, error) {
+
+	items, err := ds.list(refreshTokenPartition)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to list %s", refreshTokenPartition)
+	}
+
+	refreshTokens := make([]storage.RefreshToken, len(items))
+
+	for n, item := range items {
+
+		var refreshToken storage.RefreshToken
+
+		err = dynamodbattribute.UnmarshalMap(item, &refreshToken)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to unmarshal %v", item)
+		}
+
+		refreshTokens[n] = refreshToken
+	}
+
+	return refreshTokens, nil
+}
+
+func (ds *dynamodbStorage) ListPasswords() ([]storage.Password, error) {
+
+	items, err := ds.list(passwordPartition)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to list %s", passwordPartition)
+	}
+
+	passwords := make([]storage.Password, len(items))
+
+	for n, item := range items {
+
+		var pw PasswordWrapper
+
+		err = dynamodbattribute.UnmarshalMap(item, &pw)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to unmarshal %v", item)
+		}
+
+		passwords[n] = pw.Password
+	}
+
+	return passwords, nil
+}
+
+func (ds *dynamodbStorage) ListConnectors() ([]storage.Connector, error) {
+
+	items, err := ds.list(passwordPartition)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to list %s", passwordPartition)
+	}
+
+	connectors := make([]storage.Connector, len(items))
+
+	for n, item := range items {
+
+		var connector storage.Connector
+
+		err = dynamodbattribute.UnmarshalMap(item, &connector)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to unmarshal %v", item)
+		}
+
+		connectors[n] = connector
+	}
+
+	return connectors, nil
+}
+
+func (ds *dynamodbStorage) DeleteAuthRequest(id string) error {
+	return ds.delete(authRequestPartition, id)
+}
+
+func (ds *dynamodbStorage) DeleteAuthCode(code string) error {
+	return ds.delete(authCodePartition, code)
+}
+
+func (ds *dynamodbStorage) DeleteClient(id string) error {
+	return ds.delete(clientPartition, id)
+}
+
+func (ds *dynamodbStorage) DeleteRefresh(id string) error {
+	return ds.delete(refreshTokenPartition, id)
+}
+
+func (ds *dynamodbStorage) DeletePassword(email string) error {
+	return ds.delete(passwordPartition, email)
+}
+
+func (ds *dynamodbStorage) DeleteOfflineSessions(userID string, connID string) error {
+
+	id := fmt.Sprintf("%s/%s", userID, connID)
+
+	return ds.delete(offlineSessionPartition, id)
+}
+
+func (ds *dynamodbStorage) DeleteConnector(id string) error {
+	return ds.delete(connectorPartition, id)
+}
+
+func (ds *dynamodbStorage) UpdateClient(id string, updater func(old storage.Client) (storage.Client, error)) error {
+
+	var err error
+
+	ds.tx(func() {
+
+		var client storage.Client
+
+		err = ds.getByID(clientPartition, id, &client)
+		if err != nil {
+			return
+		}
+
+		if client, err = updater(client); err == nil {
+			err = ds.update(clientPartition, &client)
+		}
+	})
+
+	return err
+}
+
+func (ds *dynamodbStorage) UpdateKeys(updater func(old storage.Keys) (storage.Keys, error)) error {
+	var err error
+
+	ds.tx(func() {
+
+		var keys storage.Keys // TODO: Need a wrapper for this struct
+
+		err = ds.getByID(keysPartition, keysId, &keys)
+		if err != nil {
+			return
+		}
+
+		if keys, err = updater(keys); err == nil {
+			err = ds.update(keysPartition, &keys)
+		}
+	})
+
+	return err
+}
+
+func (ds *dynamodbStorage) UpdateAuthRequest(id string, updater func(a storage.AuthRequest) (storage.AuthRequest, error)) error {
+
+	var (
+		err         error
+		authRequest storage.AuthRequest
+	)
+
+	ds.tx(func() {
+
+		var arw AuthRequestWrapper
+
+			err = ds.getByID(authRequestPartition, id, &arw)
+		if err != nil {
+			return
+		}
+
+		if authRequest, err = updater(arw.AuthRequest); err == nil {
+			err = ds.update(authRequestPartition, &AuthRequestWrapper{
+				ID:          authRequest.ID,
+				AuthRequest: authRequest,
+			})
+		}
+	})
+
+	return err
+}
+
+func (ds *dynamodbStorage) UpdateRefreshToken(id string, updater func(r storage.RefreshToken) (storage.RefreshToken, error)) error {
+
+	var err error
+
+	ds.tx(func() {
+
+		var refreshToken storage.RefreshToken
+
+		err = ds.getByID(refreshTokenPartition, id, &refreshToken)
+		if err != nil {
+			return
+		}
+
+		if refreshToken, err = updater(refreshToken); err == nil {
+			err = ds.update(refreshTokenPartition, &refreshToken)
+		}
+	})
+
+	return err
+}
+
+func (ds *dynamodbStorage) UpdatePassword(email string, updater func(p storage.Password) (storage.Password, error)) error {
+
+	var (
+		err      error
+		password storage.Password
+	)
+
+	ds.tx(func() {
+
+		var pw PasswordWrapper
+
+		err = ds.getByID(passwordPartition, email, &pw)
+		if err != nil {
+			return
+		}
+
+		if password, err = updater(pw.Password); err == nil {
+			err = ds.update(passwordPartition, &PasswordWrapper{
+				ID:       password.Email,
+				Password: password,
+			})
+		}
+	})
+
+	return err
+}
+
+func (ds *dynamodbStorage) UpdateOfflineSessions(userID string, connID string, updater func(s storage.OfflineSessions) (storage.OfflineSessions, error)) error {
+
+	var (
+		err            error
+		offlineSession storage.OfflineSessions
+	)
+
+	id := fmt.Sprintf("%s/%s", userID, connID)
+
+	ds.tx(func() {
+
+		var osw OfflineSessionsWrapper
+
+		err = ds.getByID(offlineSessionPartition, id, &osw)
+		if err != nil {
+			return
+		}
+
+		if offlineSession, err = updater(osw.OfflineSessions); err == nil {
+			err = ds.update(offlineSessionPartition, &OfflineSessionsWrapper{
+				ID:              id,
+				OfflineSessions: offlineSession,
+			})
+		}
+	})
+
+	return err
+}
+
+func (ds *dynamodbStorage) UpdateConnector(id string, updater func(c storage.Connector) (storage.Connector, error)) error {
+
+	var err error
+
+	ds.tx(func() {
+
+		var connector storage.Connector
+
+		err = ds.getByID(connectorPartition, id, &connector)
+		if err != nil {
+			return
+		}
+
+		if connector, err = updater(connector); err == nil {
+			err = ds.update(connectorPartition, &connector)
+		}
+	})
+
+	return err
+}
+
+func (ds *dynamodbStorage) GarbageCollect(now time.Time) (storage.GCResult, error) {
+	ds.logger.Warnf("placeholder GC at %v", now)
+	return storage.GCResult{}, nil
+}
+
+func (ds *dynamodbStorage) tx(f func()) {
+	f()
+}
+
+// creates records in DynamoDB with a condition which checks for existing unexpired records
+func (ds *dynamodbStorage) create(partition string, rec interface{}) error {
+
+	ds.logger.Infof("create record in %s with data: %s", partition, rec)
+
+	checkExpires := dexp.And(
+		dexp.AttributeNotExists(dexp.Name("expiry")),
+		dexp.Name("expiry").LessThan(dexp.Value(time.Now().Unix())),
+	)
+
+	// if the record does NOT exists and or IS expired
+	checkExists := dexp.And(
+		dexp.AttributeNotExists(dexp.Name("id")),
+		dexp.AttributeNotExists(dexp.Name("name")),
+	)
+
+	cond := dexp.Or(checkExists, checkExpires)
+
+	err := ds.updateWithCondition(partition, rec, cond)
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			switch aerr.Code() {
+			case dynamodb.ErrCodeConditionalCheckFailedException:
+				return storage.ErrAlreadyExists
+			}
+		}
+
+		return errors.Wrap(err, "failed to create condition")
+	}
+
+	return nil
+}
+
+func (ds *dynamodbStorage) update(partition string, rec interface{}) error {
+
+	ds.logger.Infof("update record in %s with data: %s", partition, rec)
+
+	// if the record exists and is NOT expired
+	checkExists := dexp.And(
+		dexp.AttributeExists(dexp.Name("id")),
+		dexp.AttributeExists(dexp.Name("name")),
+	)
+
+	checkExpires := dexp.And(
+		dexp.AttributeNotExists(dexp.Name("expiry")),
+		dexp.Name("expiry").GreaterThan(dexp.Value(time.Now().Unix())),
+	)
+
+	cond := dexp.And(checkExists, checkExpires)
+
+	err := ds.updateWithCondition(partition, rec, cond)
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			switch aerr.Code() {
+			case dynamodb.ErrCodeConditionalCheckFailedException:
+				return storage.ErrNotFound
+			}
+		}
+
+		return errors.Wrap(err, "failed to update record")
+	}
+
+	return nil
+}
+
+func (ds *dynamodbStorage) getByID(partition string, id string, rec interface{}) error {
+
+	ds.logger.Infof("getByID record from %s with id: %s", partition, id)
+
+	res, err := ds.ddb.GetItem(&dynamodb.GetItemInput{
+		TableName:      aws.String(ds.tableName),
+		ConsistentRead: aws.Bool(true),
+		Key:            buildKeys(partition, id),
+	})
+	if err != nil {
+		return errors.Wrapf(err, "failed to get record by id: %s", id)
+	}
+
+	if res.Item != nil {
+		return errors.Errorf("record not found for id: %s", id)
+	}
+
+	err = dynamodbattribute.UnmarshalMap(res.Item, rec)
+	if err != nil { // TODO err = storage.ErrNotFound
+		return errors.Wrap(err, "failed to unmarshall record")
+	}
+
+	return nil
+}
+
+func (ds *dynamodbStorage) delete(partition string, id string) error {
+
+	ds.logger.Infof("delete record from %s with id: %s", partition, id)
+
+	res, err := ds.ddb.DeleteItem(&dynamodb.DeleteItemInput{
+		TableName:              aws.String(ds.tableName),
+		ReturnConsumedCapacity: aws.String(dynamodb.ReturnConsumedCapacityTotal),
+		Key:                    buildKeys(partition, id),
+	})
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			switch aerr.Code() {
+			case dynamodb.ErrCodeResourceNotFoundException:
+				return storage.ErrNotFound
+			}
+		}
+		return errors.Wrapf(err, "failed to delete %s by id: %s", partition, id)
+	}
+
+	ds.logger.Debugf("delete %s / %s returned capacity: %f", partition, id, aws.Float64Value(res.ConsumedCapacity.CapacityUnits))
+
+	return nil
+}
+
+func (ds *dynamodbStorage) list(partition string) ([]map[string]*dynamodb.AttributeValue, error) {
+
+	ds.logger.Infof("list records in %s", partition)
+
+	res, err := ds.ddb.Query(&dynamodb.QueryInput{
+		TableName:              aws.String(ds.tableName),
+		ConsistentRead:         aws.Bool(true),
+		KeyConditionExpression: aws.String("#partition = :partition"),
+		ExpressionAttributeNames: map[string]*string{
+			"#partition": aws.String("pk"),
+		},
+		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
+			":partition": {S: aws.String(partition)},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return res.Items, nil
+}
+
+func (ds *dynamodbStorage) updateWithCondition(partition string, rec interface{}, cond dexp.ConditionBuilder) error {
+
+	item, err := dynamodbattribute.MarshalMap(rec)
+	if err != nil {
+		return errors.Wrap(err, "failed to marshall record")
+	}
+
+	// rewrite keys and expiry in item
+	err = transformItem(partition, item)
+	if err != nil {
+		return errors.Wrap(err, "failed to transform record to dynamodb item")
+	}
+
+	expr, err := dexp.NewBuilder().WithCondition(cond).Build()
+	if err != nil {
+		return errors.Wrap(err, "failed to build dynamodb expression")
+	}
+
+	params := &dynamodb.PutItemInput{
+		Item:                      item,
+		ReturnConsumedCapacity:    aws.String(dynamodb.ReturnConsumedCapacityTotal),
+		TableName:                 aws.String(ds.tableName),
+		ConditionExpression:       expr.Condition(),
+		ExpressionAttributeNames:  expr.Names(),
+		ExpressionAttributeValues: expr.Values(),
+	}
+
+	res, err := ds.ddb.PutItem(params)
+	if err != nil {
+		return errors.Wrap(err, "failed to put item")
+	}
+
+	ds.logger.Debugf("update with condition %s returned capacity: %f", partition, aws.Float64Value(res.ConsumedCapacity.CapacityUnits))
+
+	return nil
+}
+
+func (ds *dynamodbStorage) createTable(billingMode string, throughput *dynamodb.ProvisionedThroughput) error {
+
+	_, err := ds.ddb.CreateTable(&dynamodb.CreateTableInput{
+		TableName: aws.String(ds.tableName),
+		KeySchema: []*dynamodb.KeySchemaElement{
+			{AttributeName: aws.String("pk"), KeyType: aws.String(dynamodb.KeyTypeHash)},
+			{AttributeName: aws.String("sk"), KeyType: aws.String(dynamodb.KeyTypeRange)},
+		},
+		AttributeDefinitions: []*dynamodb.AttributeDefinition{
+			{AttributeName: aws.String("pk"), AttributeType: aws.String(dynamodb.ScalarAttributeTypeS)},
+			{AttributeName: aws.String("sk"), AttributeType: aws.String(dynamodb.ScalarAttributeTypeS)},
+		},
+		// use the supplied billing mode and throughput
+		BillingMode:           aws.String(billingMode),
+		ProvisionedThroughput: throughput,
+		// always encrypt our table
+		SSESpecification: &dynamodb.SSESpecification{
+			Enabled: aws.Bool(true),
+			SSEType: aws.String(dynamodb.SSETypeAes256),
+		},
+	})
+
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			switch aerr.Code() {
+			case dynamodb.ErrCodeResourceInUseException:
+				return nil
+			}
+		}
+		return err
+	}
+
+	err = ds.ddb.WaitUntilTableExists(&dynamodb.DescribeTableInput{
+		TableName: aws.String(ds.tableName),
+	})
+	if err != nil {
+		return err
+	}
+
+	_, err = ds.ddb.UpdateTimeToLive(&dynamodb.UpdateTimeToLiveInput{
+		TableName: aws.String(ds.tableName),
+		TimeToLiveSpecification: &dynamodb.TimeToLiveSpecification{
+			AttributeName: aws.String("expiry"),
+			Enabled:       aws.Bool(true),
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (ds *dynamodbStorage) dropTable() error {
+
+	_, err := ds.ddb.DeleteTable(&dynamodb.DeleteTableInput{TableName: aws.String(ds.tableName)})
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			switch aerr.Code() {
+			case dynamodb.ErrCodeResourceNotFoundException:
+				return nil
+			}
+		}
+		return err
+	}
+
+	err = ds.ddb.WaitUntilTableExists(&dynamodb.DescribeTableInput{
+		TableName: aws.String(ds.tableName),
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func transformItem(partition string, item map[string]*dynamodb.AttributeValue) error {
+
+	// assign the partition key
+	item["pk"] = &dynamodb.AttributeValue{S: aws.String(partition)}
+
+	// rewrite the identifier for the record
+	val, ok := item["id"]
+	if !ok {
+		return errors.New("failed to locate id for rewrite")
+	}
+
+	delete(item, "id")
+	item["sk"] = val
+
+	return nil
+}
+
+func buildKeys(partition, key string) map[string]*dynamodb.AttributeValue {
+	return map[string]*dynamodb.AttributeValue{
+		"pk": {S: aws.String(partition)},
+		"sk": {S: aws.String(key)},
+	}
+}
