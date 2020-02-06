@@ -52,7 +52,7 @@ func (ds *dynamodbStorage) Close() error {
 }
 
 func (ds *dynamodbStorage) CreateClient(client storage.Client) error {
-	return ds.create(clientPartition, &client)
+	return ds.create(clientPartition, fromStorageClient(client))
 }
 
 func (ds *dynamodbStorage) CreateAuthRequest(authRequest storage.AuthRequest) error {
@@ -76,7 +76,7 @@ func (ds *dynamodbStorage) CreateOfflineSessions(offlineSession storage.OfflineS
 }
 
 func (ds *dynamodbStorage) CreateConnector(connector storage.Connector) error {
-	return ds.create(connectorPartition, connector)
+	return ds.create(connectorPartition, fromStorageConnector(connector))
 }
 
 func (ds *dynamodbStorage) GetAuthRequest(id string) (storage.AuthRequest, error) {
@@ -107,14 +107,14 @@ func (ds *dynamodbStorage) GetAuthCode(id string) (storage.AuthCode, error) {
 
 func (ds *dynamodbStorage) GetClient(id string) (storage.Client, error) {
 
-	var client storage.Client
+	var client Client
 
 	err := ds.getByID(clientPartition, id, &client)
 	if err != nil {
-		return client, err
+		return storage.Client{}, err
 	}
 
-	return client, nil
+	return toStorageClient(client), nil
 }
 
 func (ds *dynamodbStorage) GetKeys() (storage.Keys, error) {
@@ -126,7 +126,7 @@ func (ds *dynamodbStorage) GetKeys() (storage.Keys, error) {
 		return storage.Keys{}, err
 	}
 
-	return toStorageKeys(keys), nil
+	return toStorageKeys(keys)
 }
 
 func (ds *dynamodbStorage) GetRefresh(id string) (storage.RefreshToken, error) {
@@ -145,7 +145,7 @@ func (ds *dynamodbStorage) GetPassword(email string) (storage.Password, error) {
 
 	var password Password
 
-	err := ds.getByID(passwordPartition, email, &password)
+	err := ds.getByID(passwordPartition, strings.ToLower(email), &password)
 	if err != nil {
 		return storage.Password{}, err
 	}
@@ -171,14 +171,14 @@ func (ds *dynamodbStorage) GetOfflineSessions(userID string, connID string) (sto
 
 func (ds *dynamodbStorage) GetConnector(id string) (storage.Connector, error) {
 
-	var connector storage.Connector
+	var connector Connector
 
 	err := ds.getByID(connectorPartition, id, &connector)
 	if err != nil {
-		return connector, err
+		return storage.Connector{}, err
 	}
 
-	return connector, nil
+	return toStorageConnector(connector), nil
 }
 
 func (ds *dynamodbStorage) ListClients() ([]storage.Client, error) {
@@ -192,14 +192,14 @@ func (ds *dynamodbStorage) ListClients() ([]storage.Client, error) {
 
 	for n, item := range items {
 
-		var client storage.Client
+		var client Client
 
 		err = dynamodbattribute.UnmarshalMap(item, &client)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to unmarshal %v", item)
 		}
 
-		clients[n] = client
+		clients[n] = toStorageClient(client)
 	}
 
 	return clients, nil
@@ -216,14 +216,14 @@ func (ds *dynamodbStorage) ListRefreshTokens() ([]storage.RefreshToken, error) {
 
 	for n, item := range items {
 
-		var refreshToken storage.RefreshToken
+		var refreshToken RefreshToken
 
 		err = dynamodbattribute.UnmarshalMap(item, &refreshToken)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to unmarshal %v", item)
 		}
 
-		refreshTokens[n] = refreshToken
+		refreshTokens[n] = toStorageRefreshToken(refreshToken)
 	}
 
 	return refreshTokens, nil
@@ -255,23 +255,23 @@ func (ds *dynamodbStorage) ListPasswords() ([]storage.Password, error) {
 
 func (ds *dynamodbStorage) ListConnectors() ([]storage.Connector, error) {
 
-	items, err := ds.list(passwordPartition)
+	items, err := ds.list(connectorPartition)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to list %s", passwordPartition)
+		return nil, errors.Wrapf(err, "failed to list %s", connectorPartition)
 	}
 
 	connectors := make([]storage.Connector, len(items))
 
 	for n, item := range items {
 
-		var connector storage.Connector
+		var connector Connector
 
 		err = dynamodbattribute.UnmarshalMap(item, &connector)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to unmarshal %v", item)
 		}
 
-		connectors[n] = connector
+		connectors[n] = toStorageConnector(connector)
 	}
 
 	return connectors, nil
@@ -310,19 +310,22 @@ func (ds *dynamodbStorage) DeleteConnector(id string) error {
 
 func (ds *dynamodbStorage) UpdateClient(id string, updater func(old storage.Client) (storage.Client, error)) error {
 
-	var err error
+	var (
+		err error
+		client storage.Client
+	)
 
 	ds.tx(func() {
 
-		var client storage.Client
+		var cl Client
 
-		err = ds.getByID(clientPartition, id, &client)
+		err = ds.getByID(clientPartition, id, &cl)
 		if err != nil {
 			return
 		}
 
-		if client, err = updater(client); err == nil {
-			err = ds.update(clientPartition, &client)
+		if client, err = updater(toStorageClient(cl)); err == nil {
+			err = ds.update(clientPartition, fromStorageClient(client))
 		}
 	})
 
@@ -340,13 +343,29 @@ func (ds *dynamodbStorage) UpdateKeys(updater func(old storage.Keys) (storage.Ke
 
 		var k Keys
 
+		firstUpdate := false
+
 		err = ds.getByID(keysPartition, keysId, &k)
+		if err != nil {
+			if err != storage.ErrNotFound {
+				return
+			}
+
+			firstUpdate = true
+			k = Keys{}
+		}
+
+		keys, err = toStorageKeys(k)
 		if err != nil {
 			return
 		}
 
-		if keys, err = updater(toStorageKeys(k)); err == nil {
-			err = ds.update(keysPartition, fromStorageKeys(keys))
+		if keys, err = updater(keys); err == nil {
+			if firstUpdate {
+				err = ds.create(keysPartition, fromStorageKeys(keys))
+			} else {
+				err = ds.update(keysPartition, fromStorageKeys(keys))
+			}
 		}
 	})
 
@@ -453,19 +472,22 @@ func (ds *dynamodbStorage) UpdateOfflineSessions(userID string, connID string, u
 
 func (ds *dynamodbStorage) UpdateConnector(id string, updater func(c storage.Connector) (storage.Connector, error)) error {
 
-	var err error
+	var (
+		err error
+		connector storage.Connector
+	)
 
 	ds.tx(func() {
 
-		var connector storage.Connector
+		var ct Connector
 
-		err = ds.getByID(connectorPartition, id, &connector)
+		err = ds.getByID(connectorPartition, id, &ct)
 		if err != nil {
 			return
 		}
 
-		if connector, err = updater(connector); err == nil {
-			err = ds.update(connectorPartition, &connector)
+		if connector, err = updater(toStorageConnector(ct)); err == nil {
+			err = ds.update(connectorPartition, fromStorageConnector(connector))
 		}
 	})
 
@@ -582,14 +604,37 @@ func (ds *dynamodbStorage) delete(partition string, id string) error {
 
 	ds.logger.Infof("delete record from %s with id: %s", partition, id)
 
+	// if the record exists and is NOT expired
+	checkExists := dexp.And(
+		dexp.AttributeExists(dexp.Name("pk")),
+		dexp.AttributeExists(dexp.Name("sk")),
+	)
+
+	checkExpires := dexp.Or(
+		dexp.AttributeNotExists(dexp.Name("expires")),
+		dexp.Name("expires").GreaterThan(dexp.Value(time.Now().Unix())),
+	)
+
+	cond := dexp.And(checkExists, checkExpires)
+
+	expr, err := dexp.NewBuilder().WithCondition(cond).Build()
+	if err != nil {
+		return errors.Wrap(err, "failed to build dynamodb expression")
+	}
+
 	res, err := ds.ddb.DeleteItem(&dynamodb.DeleteItemInput{
 		TableName:              aws.String(ds.tableName),
 		ReturnConsumedCapacity: aws.String(dynamodb.ReturnConsumedCapacityTotal),
 		Key:                    buildKeys(partition, id),
+		ConditionExpression:       expr.Condition(),
+		ExpressionAttributeNames:  expr.Names(),
+		ExpressionAttributeValues: expr.Values(),
 	})
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
 			switch aerr.Code() {
+			case dynamodb.ErrCodeConditionalCheckFailedException:
+				return storage.ErrNotFound
 			case dynamodb.ErrCodeResourceNotFoundException:
 				return storage.ErrNotFound
 			}
@@ -729,7 +774,7 @@ func (ds *dynamodbStorage) dropTable() error {
 		return err
 	}
 
-	err = ds.ddb.WaitUntilTableExists(&dynamodb.DescribeTableInput{
+	err = ds.ddb.WaitUntilTableNotExists(&dynamodb.DescribeTableInput{
 		TableName: aws.String(ds.tableName),
 	})
 	if err != nil {
@@ -744,14 +789,14 @@ func transformItem(partition string, item map[string]*dynamodb.AttributeValue) e
 	// assign the partition key
 	item["pk"] = &dynamodb.AttributeValue{S: aws.String(partition)}
 
-	// rewrite the identifier for the record
-	val, ok := item["id"]
-	if !ok {
-		return errors.New("failed to locate id for rewrite")
-	}
-
-	// delete(item, "id")
-	item["sk"] = val
+	//// rewrite the identifier for the record
+	//val, ok := item["id"]
+	//if !ok {
+	//	return errors.New("failed to locate id for rewrite")
+	//}
+	//
+	//// delete(item, "id")
+	//item["sk"] = val
 
 	return nil
 }

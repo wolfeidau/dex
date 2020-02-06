@@ -1,17 +1,82 @@
 package dynamodb
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/dexidp/dex/storage"
-	jose "gopkg.in/square/go-jose.v2"
 )
+
+// Client is a mirrored struct from storage with JSON struct tags
+type Client struct {
+	ID           string   `json:"sk"`
+	Secret       string   `json:"secret"`
+	RedirectURIs []string `json:"redirectURIs"`
+	TrustedPeers []string `json:"trustedPeers"`
+	Public       bool     `json:"public"`
+	Name         string   `json:"name"`
+	LogoURL      string   `json:"logoURL"`
+}
+
+func fromStorageClient(a storage.Client) *Client {
+	return &Client{
+		ID:           a.ID,
+		Secret:       a.Secret,
+		RedirectURIs: a.RedirectURIs,
+		TrustedPeers: a.TrustedPeers,
+		Public:       a.Public,
+		Name:         a.Name,
+		LogoURL:      a.LogoURL,
+	}
+}
+
+func toStorageClient(a Client) storage.Client {
+	return storage.Client{
+		ID:           a.ID,
+		Secret:       a.Secret,
+		RedirectURIs: a.RedirectURIs,
+		TrustedPeers: a.TrustedPeers,
+		Public:       a.Public,
+		Name:         a.Name,
+		LogoURL:      a.LogoURL,
+	}
+}
+
+// Connector is a mirrored struct from storage with JSON struct tags
+type Connector struct {
+	ID              string `json:"sk"`
+	Type            string `json:"type"`
+	Name            string `json:"name"`
+	ResourceVersion string `json:"resourceVersion"`
+	Config          []byte `json:"email"`
+}
+
+func fromStorageConnector(a storage.Connector) *Connector {
+	return &Connector{
+		ID:              a.ID,
+		Type:            a.Type,
+		Name:            a.Name,
+		ResourceVersion: a.ResourceVersion,
+		Config:          a.Config,
+	}
+}
+
+func toStorageConnector(a Connector) storage.Connector {
+	return storage.Connector{
+		ID:              a.ID,
+		Type:            a.Type,
+		Name:            a.Name,
+		ResourceVersion: a.ResourceVersion,
+		Config:          a.Config,
+	}
+}
 
 // AuthCode is a mirrored struct from storage with JSON struct tags
 type AuthCode struct {
-	ID          string   `json:"id"`
+	ID          string   `json:"sk"`
 	ClientID    string   `json:"clientID"`
 	RedirectURI string   `json:"redirectURI"`
 	Nonce       string   `json:"nonce,omitempty"`
@@ -54,7 +119,7 @@ func toStorageAuthCode(a AuthCode) storage.AuthCode {
 
 // AuthRequest is a mirrored struct from storage with JSON struct tags
 type AuthRequest struct {
-	ID                  string    `json:"id"`
+	ID                  string    `json:"sk"`
 	ClientID            string    `json:"client_id"`
 	ResponseTypes       []string  `json:"response_types"`
 	Scopes              []string  `json:"scopes"`
@@ -107,7 +172,7 @@ func toStorageAuthRequest(a AuthRequest) storage.AuthRequest {
 
 // RefreshToken is a mirrored struct from storage with JSON struct tags
 type RefreshToken struct {
-	ID            string    `json:"id"`
+	ID            string    `json:"sk"`
 	Token         string    `json:"token"`
 	CreatedAt     time.Time `json:"created_at"`
 	LastUsed      time.Time `json:"last_used"`
@@ -183,35 +248,74 @@ func toStorageClaims(i Claims) storage.Claims {
 
 // Keys is a mirrored struct from storage with JSON struct tags
 type Keys struct {
-	ID               string                    `json:"id"`
-	SigningKey       *jose.JSONWebKey          `json:"signing_key,omitempty"`
-	SigningKeyPub    *jose.JSONWebKey          `json:"signing_key_pub,omitempty"`
-	VerificationKeys []storage.VerificationKey `json:"verification_keys"`
-	NextRotation     time.Time                 `json:"next_rotation"`
+	ID               string    `json:"sk"`
+	SigningKey       string    `json:"signing_key"`
+	SigningKeyPub    string    `json:"signing_key_pub"`
+	VerificationKeys string    `json:"verification_keys"`
+	NextRotation     time.Time `json:"next_rotation"`
 }
 
 func fromStorageKeys(o storage.Keys) *Keys {
 	return &Keys{
 		ID:               keysId, // Uses a static id for this as it is a list of one
-		SigningKey:       o.SigningKey,
-		SigningKeyPub:    o.SigningKeyPub,
-		VerificationKeys: o.VerificationKeys,
+		SigningKey:       encodeBase64(o.SigningKey),
+		SigningKeyPub:    encodeBase64(o.SigningKeyPub),
+		VerificationKeys: encodeBase64(o.VerificationKeys),
 		NextRotation:     o.NextRotation,
 	}
 }
 
-func toStorageKeys(o Keys) storage.Keys {
-	return storage.Keys{
-		SigningKey:       o.SigningKey,
-		SigningKeyPub:    o.SigningKeyPub,
-		VerificationKeys: o.VerificationKeys,
-		NextRotation:     o.NextRotation,
+func toStorageKeys(o Keys) (storage.Keys, error) {
+
+	keys := storage.Keys{
+		NextRotation: o.NextRotation,
 	}
+
+	err := decodeBase64(o.SigningKey, &keys.SigningKey)
+	if err != nil {
+		return keys, err
+	}
+
+	err = decodeBase64(o.SigningKeyPub, &keys.SigningKeyPub)
+	if err != nil {
+		return keys, err
+	}
+
+	err = decodeBase64(o.VerificationKeys, &keys.VerificationKeys)
+	if err != nil {
+		return keys, err
+	}
+
+	return keys, nil
+}
+
+func encodeBase64(rec interface{}) string {
+	data, _ := json.Marshal(rec)
+	return base64.RawStdEncoding.EncodeToString(data)
+}
+
+func decodeBase64(data string, rec interface{}) error {
+
+	if data == "" {
+		return nil
+	}
+
+	buf, err := base64.RawStdEncoding.DecodeString(data)
+	if err != nil {
+		return err
+	}
+
+	err = json.Unmarshal(buf, rec)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // OfflineSessions is a mirrored struct from storage with JSON struct tags
 type OfflineSessions struct {
-	ID            string                              `json:"id"`
+	ID            string                              `json:"sk"`
 	UserID        string                              `json:"user_id,omitempty"`
 	ConnID        string                              `json:"conn_id,omitempty"`
 	Refresh       map[string]*storage.RefreshTokenRef `json:"refresh,omitempty"`
@@ -243,7 +347,7 @@ func toStorageOfflineSessions(o OfflineSessions) storage.OfflineSessions {
 }
 
 type Password struct {
-	ID          string `json:"id"`
+	ID          string `json:"sk"`
 	Email       string `json:"email"`
 	Hash        []byte `json:"hash"`
 	HashFromEnv string `json:"hashFromEnv"`
