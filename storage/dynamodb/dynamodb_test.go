@@ -58,4 +58,5 @@ func TestDynamoDB(t *testing.T) {
 	}
 
 	conformance.RunTests(t, newStorage)
+	conformance.RunTransactionTests(t, newStorage)
 }
