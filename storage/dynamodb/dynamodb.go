@@ -2,6 +2,9 @@ package dynamodb
 
 import (
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -12,8 +15,6 @@ import (
 	"github.com/dexidp/dex/pkg/log"
 	"github.com/dexidp/dex/storage"
 	"github.com/pkg/errors"
-	"strings"
-	"time"
 )
 
 const (
@@ -29,7 +30,6 @@ const (
 )
 
 func New(logger log.Logger, tableName string, config ...*aws.Config) storage.Storage {
-
 	sess := session.Must(session.NewSession(config...))
 
 	return &dynamodbStorage{
@@ -80,7 +80,6 @@ func (ds *dynamodbStorage) CreateConnector(connector storage.Connector) error {
 }
 
 func (ds *dynamodbStorage) GetAuthRequest(id string) (storage.AuthRequest, error) {
-
 	var authRequest AuthRequest
 
 	err := ds.getByID(authRequestPartition, id, &authRequest)
@@ -92,7 +91,6 @@ func (ds *dynamodbStorage) GetAuthRequest(id string) (storage.AuthRequest, error
 }
 
 func (ds *dynamodbStorage) GetAuthCode(id string) (storage.AuthCode, error) {
-
 	var authCode AuthCode
 
 	err := ds.getByID(authCodePartition, id, &authCode)
@@ -106,7 +104,6 @@ func (ds *dynamodbStorage) GetAuthCode(id string) (storage.AuthCode, error) {
 }
 
 func (ds *dynamodbStorage) GetClient(id string) (storage.Client, error) {
-
 	var client Client
 
 	err := ds.getByID(clientPartition, id, &client)
@@ -118,7 +115,6 @@ func (ds *dynamodbStorage) GetClient(id string) (storage.Client, error) {
 }
 
 func (ds *dynamodbStorage) GetKeys() (storage.Keys, error) {
-
 	var keys Keys
 
 	err := ds.getByID(keysPartition, keysId, &keys)
@@ -130,7 +126,6 @@ func (ds *dynamodbStorage) GetKeys() (storage.Keys, error) {
 }
 
 func (ds *dynamodbStorage) GetRefresh(id string) (storage.RefreshToken, error) {
-
 	var refreshToken RefreshToken
 
 	err := ds.getByID(refreshTokenPartition, id, &refreshToken)
@@ -142,7 +137,6 @@ func (ds *dynamodbStorage) GetRefresh(id string) (storage.RefreshToken, error) {
 }
 
 func (ds *dynamodbStorage) GetPassword(email string) (storage.Password, error) {
-
 	var password Password
 
 	err := ds.getByID(passwordPartition, strings.ToLower(email), &password)
@@ -156,7 +150,6 @@ func (ds *dynamodbStorage) GetPassword(email string) (storage.Password, error) {
 }
 
 func (ds *dynamodbStorage) GetOfflineSessions(userID string, connID string) (storage.OfflineSessions, error) {
-
 	var offlineSession OfflineSessions
 
 	id := fmt.Sprintf("%s/%s", userID, connID)
@@ -170,7 +163,6 @@ func (ds *dynamodbStorage) GetOfflineSessions(userID string, connID string) (sto
 }
 
 func (ds *dynamodbStorage) GetConnector(id string) (storage.Connector, error) {
-
 	var connector Connector
 
 	err := ds.getByID(connectorPartition, id, &connector)
@@ -182,7 +174,6 @@ func (ds *dynamodbStorage) GetConnector(id string) (storage.Connector, error) {
 }
 
 func (ds *dynamodbStorage) ListClients() ([]storage.Client, error) {
-
 	items, err := ds.list(clientPartition)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to list %s", clientPartition)
@@ -191,7 +182,6 @@ func (ds *dynamodbStorage) ListClients() ([]storage.Client, error) {
 	clients := make([]storage.Client, len(items))
 
 	for n, item := range items {
-
 		var client Client
 
 		err = dynamodbattribute.UnmarshalMap(item, &client)
@@ -206,7 +196,6 @@ func (ds *dynamodbStorage) ListClients() ([]storage.Client, error) {
 }
 
 func (ds *dynamodbStorage) ListRefreshTokens() ([]storage.RefreshToken, error) {
-
 	items, err := ds.list(refreshTokenPartition)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to list %s", refreshTokenPartition)
@@ -215,7 +204,6 @@ func (ds *dynamodbStorage) ListRefreshTokens() ([]storage.RefreshToken, error) {
 	refreshTokens := make([]storage.RefreshToken, len(items))
 
 	for n, item := range items {
-
 		var refreshToken RefreshToken
 
 		err = dynamodbattribute.UnmarshalMap(item, &refreshToken)
@@ -230,7 +218,6 @@ func (ds *dynamodbStorage) ListRefreshTokens() ([]storage.RefreshToken, error) {
 }
 
 func (ds *dynamodbStorage) ListPasswords() ([]storage.Password, error) {
-
 	items, err := ds.list(passwordPartition)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to list %s", passwordPartition)
@@ -239,7 +226,6 @@ func (ds *dynamodbStorage) ListPasswords() ([]storage.Password, error) {
 	passwords := make([]storage.Password, len(items))
 
 	for n, item := range items {
-
 		var pw Password
 
 		err = dynamodbattribute.UnmarshalMap(item, &pw)
@@ -254,7 +240,6 @@ func (ds *dynamodbStorage) ListPasswords() ([]storage.Password, error) {
 }
 
 func (ds *dynamodbStorage) ListConnectors() ([]storage.Connector, error) {
-
 	items, err := ds.list(connectorPartition)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to list %s", connectorPartition)
@@ -263,7 +248,6 @@ func (ds *dynamodbStorage) ListConnectors() ([]storage.Connector, error) {
 	connectors := make([]storage.Connector, len(items))
 
 	for n, item := range items {
-
 		var connector Connector
 
 		err = dynamodbattribute.UnmarshalMap(item, &connector)
@@ -298,7 +282,6 @@ func (ds *dynamodbStorage) DeletePassword(email string) error {
 }
 
 func (ds *dynamodbStorage) DeleteOfflineSessions(userID string, connID string) error {
-
 	id := fmt.Sprintf("%s/%s", userID, connID)
 
 	return ds.delete(offlineSessionPartition, id)
@@ -309,14 +292,12 @@ func (ds *dynamodbStorage) DeleteConnector(id string) error {
 }
 
 func (ds *dynamodbStorage) UpdateClient(id string, updater func(old storage.Client) (storage.Client, error)) error {
-
 	var (
-		err error
+		err    error
 		client storage.Client
 	)
 
 	ds.tx(func() {
-
 		var cl Client
 
 		err = ds.getByID(clientPartition, id, &cl)
@@ -333,14 +314,12 @@ func (ds *dynamodbStorage) UpdateClient(id string, updater func(old storage.Clie
 }
 
 func (ds *dynamodbStorage) UpdateKeys(updater func(old storage.Keys) (storage.Keys, error)) error {
-
 	var (
-		err error
+		err  error
 		keys storage.Keys
 	)
 
 	ds.tx(func() {
-
 		var k Keys
 
 		firstUpdate := false
@@ -373,14 +352,12 @@ func (ds *dynamodbStorage) UpdateKeys(updater func(old storage.Keys) (storage.Ke
 }
 
 func (ds *dynamodbStorage) UpdateAuthRequest(id string, updater func(a storage.AuthRequest) (storage.AuthRequest, error)) error {
-
 	var (
 		err         error
 		authRequest storage.AuthRequest
 	)
 
 	ds.tx(func() {
-
 		var arw AuthRequest
 
 		err = ds.getByID(authRequestPartition, id, &arw)
@@ -397,14 +374,12 @@ func (ds *dynamodbStorage) UpdateAuthRequest(id string, updater func(a storage.A
 }
 
 func (ds *dynamodbStorage) UpdateRefreshToken(id string, updater func(r storage.RefreshToken) (storage.RefreshToken, error)) error {
-
 	var (
 		err          error
 		refreshToken storage.RefreshToken
 	)
 
 	ds.tx(func() {
-
 		var rt RefreshToken
 
 		err = ds.getByID(refreshTokenPartition, id, &rt)
@@ -421,14 +396,12 @@ func (ds *dynamodbStorage) UpdateRefreshToken(id string, updater func(r storage.
 }
 
 func (ds *dynamodbStorage) UpdatePassword(email string, updater func(p storage.Password) (storage.Password, error)) error {
-
 	var (
 		err      error
 		password storage.Password
 	)
 
 	ds.tx(func() {
-
 		var pw Password
 
 		err = ds.getByID(passwordPartition, strings.ToLower(email), &pw)
@@ -445,7 +418,6 @@ func (ds *dynamodbStorage) UpdatePassword(email string, updater func(p storage.P
 }
 
 func (ds *dynamodbStorage) UpdateOfflineSessions(userID string, connID string, updater func(s storage.OfflineSessions) (storage.OfflineSessions, error)) error {
-
 	var (
 		err            error
 		offlineSession storage.OfflineSessions
@@ -454,7 +426,6 @@ func (ds *dynamodbStorage) UpdateOfflineSessions(userID string, connID string, u
 	id := fmt.Sprintf("%s/%s", userID, connID)
 
 	ds.tx(func() {
-
 		var osw OfflineSessions
 
 		err = ds.getByID(offlineSessionPartition, id, &osw)
@@ -471,14 +442,12 @@ func (ds *dynamodbStorage) UpdateOfflineSessions(userID string, connID string, u
 }
 
 func (ds *dynamodbStorage) UpdateConnector(id string, updater func(c storage.Connector) (storage.Connector, error)) error {
-
 	var (
-		err error
+		err       error
 		connector storage.Connector
 	)
 
 	ds.tx(func() {
-
 		var ct Connector
 
 		err = ds.getByID(connectorPartition, id, &ct)
@@ -505,7 +474,6 @@ func (ds *dynamodbStorage) tx(f func()) {
 
 // creates records in DynamoDB with a condition which checks for existing unexpired records
 func (ds *dynamodbStorage) create(partition string, rec interface{}) error {
-
 	ds.logger.Infof("create record in %s with data: %+v", partition, rec)
 
 	checkExpires := dexp.And(
@@ -537,7 +505,6 @@ func (ds *dynamodbStorage) create(partition string, rec interface{}) error {
 }
 
 func (ds *dynamodbStorage) update(partition string, rec interface{}) error {
-
 	ds.logger.Infof("update record in %s with data: %+v", partition, rec)
 
 	// if the record exists and is NOT expired
@@ -570,7 +537,6 @@ func (ds *dynamodbStorage) update(partition string, rec interface{}) error {
 }
 
 func (ds *dynamodbStorage) getByID(partition string, id string, rec interface{}) error {
-
 	ds.logger.Infof("getByID record from %s with id: %s", partition, id)
 
 	res, err := ds.ddb.GetItem(&dynamodb.GetItemInput{
@@ -601,7 +567,6 @@ func (ds *dynamodbStorage) getByID(partition string, id string, rec interface{})
 }
 
 func (ds *dynamodbStorage) delete(partition string, id string) error {
-
 	ds.logger.Infof("delete record from %s with id: %s", partition, id)
 
 	// if the record exists and is NOT expired
@@ -623,9 +588,9 @@ func (ds *dynamodbStorage) delete(partition string, id string) error {
 	}
 
 	res, err := ds.ddb.DeleteItem(&dynamodb.DeleteItemInput{
-		TableName:              aws.String(ds.tableName),
-		ReturnConsumedCapacity: aws.String(dynamodb.ReturnConsumedCapacityTotal),
-		Key:                    buildKeys(partition, id),
+		TableName:                 aws.String(ds.tableName),
+		ReturnConsumedCapacity:    aws.String(dynamodb.ReturnConsumedCapacityTotal),
+		Key:                       buildKeys(partition, id),
 		ConditionExpression:       expr.Condition(),
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
@@ -648,7 +613,6 @@ func (ds *dynamodbStorage) delete(partition string, id string) error {
 }
 
 func (ds *dynamodbStorage) list(partition string) ([]map[string]*dynamodb.AttributeValue, error) {
-
 	ds.logger.Infof("list records in %s", partition)
 
 	res, err := ds.ddb.Query(&dynamodb.QueryInput{
@@ -670,7 +634,6 @@ func (ds *dynamodbStorage) list(partition string) ([]map[string]*dynamodb.Attrib
 }
 
 func (ds *dynamodbStorage) updateWithCondition(partition string, rec interface{}, cond dexp.ConditionBuilder) error {
-
 	item, err := dynamodbattribute.MarshalMap(rec)
 	if err != nil {
 		return errors.Wrap(err, "failed to marshall record")
@@ -709,7 +672,6 @@ func (ds *dynamodbStorage) updateWithCondition(partition string, rec interface{}
 }
 
 func (ds *dynamodbStorage) createTable(billingMode string, throughput *dynamodb.ProvisionedThroughput) error {
-
 	_, err := ds.ddb.CreateTable(&dynamodb.CreateTableInput{
 		TableName: aws.String(ds.tableName),
 		KeySchema: []*dynamodb.KeySchemaElement{
@@ -762,7 +724,6 @@ func (ds *dynamodbStorage) createTable(billingMode string, throughput *dynamodb.
 }
 
 func (ds *dynamodbStorage) dropTable() error {
-
 	_, err := ds.ddb.DeleteTable(&dynamodb.DeleteTableInput{TableName: aws.String(ds.tableName)})
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
@@ -785,7 +746,6 @@ func (ds *dynamodbStorage) dropTable() error {
 }
 
 func transformItem(partition string, item map[string]*dynamodb.AttributeValue) error {
-
 	// assign the partition key
 	item["pk"] = &dynamodb.AttributeValue{S: aws.String(partition)}
 

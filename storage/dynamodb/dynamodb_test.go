@@ -1,14 +1,15 @@
 package dynamodb
 
 import (
+	"os"
+	"testing"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/dexidp/dex/storage"
 	"github.com/dexidp/dex/storage/conformance"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
-	"os"
-	"testing"
 )
 
 const testDynamoDBEnv = "DEX_DYNAMODB_ENDPOINT"
@@ -24,7 +25,6 @@ var logger = &logrus.Logger{
 }
 
 func TestDynamoDB(t *testing.T) {
-
 	assert := require.New(t)
 
 	endpointsStr := os.Getenv(testDynamoDBEnv)

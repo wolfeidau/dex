@@ -76,7 +76,7 @@ fix: bin/golangci-lint ## Fix lint violations
 
 .PHONY: docker-image
 docker-image:
-	@sudo docker build -t $(DOCKER_IMAGE) .
+	@docker build -t $(DOCKER_IMAGE) .
 
 .PHONY: proto
 proto: bin/protoc bin/protoc-gen-go

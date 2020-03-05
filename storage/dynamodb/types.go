@@ -266,7 +266,6 @@ func fromStorageKeys(o storage.Keys) *Keys {
 }
 
 func toStorageKeys(o Keys) (storage.Keys, error) {
-
 	keys := storage.Keys{
 		NextRotation: o.NextRotation,
 	}
@@ -295,7 +294,6 @@ func encodeBase64(rec interface{}) string {
 }
 
 func decodeBase64(data string, rec interface{}) error {
-
 	if data == "" {
 		return nil
 	}

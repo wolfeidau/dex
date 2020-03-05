@@ -4,9 +4,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/dexidp/dex/storage/dynamodb"
 	"os"
 	"strings"
+
+	"github.com/dexidp/dex/storage/dynamodb"
 
 	"golang.org/x/crypto/bcrypt"
 
