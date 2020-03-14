@@ -26,9 +26,10 @@ const (
 	offlineSessionPartition = "offline_session"
 	connectorPartition      = "connector"
 	keysPartition           = "keys"
-	keysId                  = "openid-connect"
+	keysID                  = "openid-connect"
 )
 
+// New create a new storage instance for DynamoDB
 func New(logger log.Logger, tableName string, config ...*aws.Config) storage.Storage {
 	sess := session.Must(session.NewSession(config...))
 
@@ -117,7 +118,7 @@ func (ds *dynamodbStorage) GetClient(id string) (storage.Client, error) {
 func (ds *dynamodbStorage) GetKeys() (storage.Keys, error) {
 	var keys Keys
 
-	err := ds.getByID(keysPartition, keysId, &keys)
+	err := ds.getByID(keysPartition, keysID, &keys)
 	if err != nil {
 		return storage.Keys{}, err
 	}
@@ -324,7 +325,7 @@ func (ds *dynamodbStorage) UpdateKeys(updater func(old storage.Keys) (storage.Ke
 
 		firstUpdate := false
 
-		err = ds.getByID(keysPartition, keysId, &k)
+		err = ds.getByID(keysPartition, keysID, &k)
 		if err != nil {
 			if err != storage.ErrNotFound {
 				return
@@ -474,7 +475,7 @@ func (ds *dynamodbStorage) tx(f func()) {
 
 // creates records in DynamoDB with a condition which checks for existing unexpired records
 func (ds *dynamodbStorage) create(partition string, rec interface{}) error {
-	ds.logger.Infof("create record in %s with data: %+v", partition, rec)
+	ds.logger.Debugf("create record in %s with data: %+v", partition, rec)
 
 	checkExpires := dexp.And(
 		dexp.AttributeNotExists(dexp.Name("expiry")),
@@ -505,7 +506,7 @@ func (ds *dynamodbStorage) create(partition string, rec interface{}) error {
 }
 
 func (ds *dynamodbStorage) update(partition string, rec interface{}) error {
-	ds.logger.Infof("update record in %s with data: %+v", partition, rec)
+	ds.logger.Debugf("update record in %s with data: %+v", partition, rec)
 
 	// if the record exists and is NOT expired
 	checkExists := dexp.And(
@@ -537,7 +538,7 @@ func (ds *dynamodbStorage) update(partition string, rec interface{}) error {
 }
 
 func (ds *dynamodbStorage) getByID(partition string, id string, rec interface{}) error {
-	ds.logger.Infof("getByID record from %s with id: %s", partition, id)
+	ds.logger.Debugf("getByID record from %s with id: %s", partition, id)
 
 	res, err := ds.ddb.GetItem(&dynamodb.GetItemInput{
 		TableName:      aws.String(ds.tableName),
@@ -567,7 +568,7 @@ func (ds *dynamodbStorage) getByID(partition string, id string, rec interface{})
 }
 
 func (ds *dynamodbStorage) delete(partition string, id string) error {
-	ds.logger.Infof("delete record from %s with id: %s", partition, id)
+	ds.logger.Debugf("delete record from %s with id: %s", partition, id)
 
 	// if the record exists and is NOT expired
 	checkExists := dexp.And(
@@ -613,7 +614,7 @@ func (ds *dynamodbStorage) delete(partition string, id string) error {
 }
 
 func (ds *dynamodbStorage) list(partition string) ([]map[string]*dynamodb.AttributeValue, error) {
-	ds.logger.Infof("list records in %s", partition)
+	ds.logger.Debugf("list records in %s", partition)
 
 	res, err := ds.ddb.Query(&dynamodb.QueryInput{
 		TableName:              aws.String(ds.tableName),
@@ -659,7 +660,7 @@ func (ds *dynamodbStorage) updateWithCondition(partition string, rec interface{}
 		ExpressionAttributeValues: expr.Values(),
 	}
 
-	ds.logger.Infof("update: %+v", params)
+	ds.logger.Debugf("update: %+v", params)
 
 	res, err := ds.ddb.PutItem(params)
 	if err != nil {

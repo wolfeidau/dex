@@ -257,7 +257,7 @@ type Keys struct {
 
 func fromStorageKeys(o storage.Keys) *Keys {
 	return &Keys{
-		ID:               keysId, // Uses a static id for this as it is a list of one
+		ID:               keysID, // Uses a static id for this as it is a list of one
 		SigningKey:       encodeBase64(o.SigningKey),
 		SigningKeyPub:    encodeBase64(o.SigningKeyPub),
 		VerificationKeys: encodeBase64(o.VerificationKeys),
