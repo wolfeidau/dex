@@ -21,7 +21,9 @@ const (
 	clientPartition         = "client"
 	authCodePartition       = "auth_code"
 	refreshTokenPartition   = "refresh_token"
+	deviceTokenPartition    = "device_token"
 	authRequestPartition    = "auth_req"
+	deviceRequestPartition  = "device_req"
 	passwordPartition       = "password"
 	offlineSessionPartition = "offline_session"
 	connectorPartition      = "connector"
@@ -78,6 +80,14 @@ func (ds *dynamodbStorage) CreateOfflineSessions(offlineSession storage.OfflineS
 
 func (ds *dynamodbStorage) CreateConnector(connector storage.Connector) error {
 	return ds.create(connectorPartition, fromStorageConnector(connector))
+}
+
+func (ds *dynamodbStorage) CreateDeviceRequest(deviceRequest storage.DeviceRequest) error {
+	return ds.create(deviceRequestPartition, fromStorageDeviceRequest(deviceRequest))
+}
+
+func (ds *dynamodbStorage) CreateDeviceToken(deviceToken storage.DeviceToken) error {
+	return ds.create(deviceTokenPartition, fromStorageDeviceToken(deviceToken))
 }
 
 func (ds *dynamodbStorage) GetAuthRequest(id string) (storage.AuthRequest, error) {
@@ -172,6 +182,27 @@ func (ds *dynamodbStorage) GetConnector(id string) (storage.Connector, error) {
 	}
 
 	return toStorageConnector(connector), nil
+}
+
+func (ds *dynamodbStorage) GetDeviceRequest(userCode string) (storage.DeviceRequest, error) {
+	var deviceRequest DeviceRequest
+
+	err := ds.getByID(deviceRequestPartition, userCode, &deviceRequest)
+	if err != nil {
+		return storage.DeviceRequest{}, err
+	}
+
+	return toStorageDeviceRequest(deviceRequest), nil
+}
+func (ds *dynamodbStorage) GetDeviceToken(deviceCode string) (storage.DeviceToken, error) {
+	var deviceToken DeviceToken
+
+	err := ds.getByID(deviceTokenPartition, deviceCode, &deviceToken)
+	if err != nil {
+		return storage.DeviceToken{}, err
+	}
+
+	return toStorageDeviceToken(deviceToken), nil
 }
 
 func (ds *dynamodbStorage) ListClients() ([]storage.Client, error) {
@@ -390,6 +421,28 @@ func (ds *dynamodbStorage) UpdateRefreshToken(id string, updater func(r storage.
 
 		if refreshToken, err = updater(toStorageRefreshToken(rt)); err == nil {
 			err = ds.update(refreshTokenPartition, fromStorageRefreshToken(refreshToken))
+		}
+	})
+
+	return err
+}
+
+func (ds *dynamodbStorage) UpdateDeviceToken(deviceCode string, updater func(t storage.DeviceToken) (storage.DeviceToken, error)) error {
+	var (
+		err         error
+		deviceToken storage.DeviceToken
+	)
+
+	ds.tx(func() {
+		var dt DeviceToken
+
+		err = ds.getByID(refreshTokenPartition, deviceCode, &dt)
+		if err != nil {
+			return
+		}
+
+		if deviceToken, err = updater(toStorageDeviceToken(dt)); err == nil {
+			err = ds.update(deviceTokenPartition, fromStorageDeviceToken(deviceToken))
 		}
 	})
 

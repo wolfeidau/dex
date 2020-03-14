@@ -51,6 +51,7 @@ func TestDynamoDB(t *testing.T) {
 			ReadCapacityUnits:  aws.Int64(1),
 			WriteCapacityUnits: aws.Int64(1),
 		})
+		assert.NoError(err)
 	}
 
 	newStorage := func() storage.Storage {

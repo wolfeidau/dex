@@ -227,6 +227,8 @@ var migrations = []migration{
 				modify column state varchar(4096);
 			`,
 		},
+	},
+	{
 		flavor: &flavorMySQL,
 		stmts: []string{`
 			create table device_request (
