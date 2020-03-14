@@ -122,12 +122,20 @@ const (
 	grantTypeAuthorizationCode = "authorization_code"
 	grantTypeRefreshToken      = "refresh_token"
 	grantTypePassword          = "password"
+	grantTypeDeviceCode        = "urn:ietf:params:oauth:grant-type:device_code"
 )
 
 const (
 	responseTypeCode    = "code"     // "Regular" flow
 	responseTypeToken   = "token"    // Implicit flow for frontend apps.
 	responseTypeIDToken = "id_token" // ID Token in url fragment
+)
+
+const (
+	deviceTokenPending  = "authorization_pending"
+	deviceTokenComplete = "complete"
+	deviceTokenSlowDown = "slow_down"
+	deviceTokenExpired  = "expired_token"
 )
 
 func parseScopes(scopes []string) connector.Scopes {
